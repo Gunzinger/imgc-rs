@@ -102,7 +102,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Push README.md to Dockerhub
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
