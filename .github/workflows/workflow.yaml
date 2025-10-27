@@ -16,15 +16,15 @@ jobs:
       release_upload_url: ${{ steps.gh_release.outputs.upload_url }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Create GitHub Release
       - name: Create GitHub Release
         id: gh_release
         uses: softprops/action-gh-release@v2
         with:
-          name: Release ${{ github.ref }}
-          tag_name: ${{ github.ref }}
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
           draft: false
           prerelease: false
 
@@ -37,7 +37,7 @@ jobs:
     name: Build binaries for ${{ matrix.cpu_target }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Extract version from the Git tag (strip leading 'v')
       - name: Set version from tag
@@ -53,18 +53,18 @@ jobs:
           sed -i "s/0\\.0\\.0-git/$VERSION/" Cargo.lock
           grep -i -C 5 "imgc" Cargo.lock
 
+      - name: Install Linux and Windows Cross Compilers
+        run: sudo apt-get install --yes --no-install-recommends musl-tools gcc-mingw-w64-x86-64-win32 nasm upx-ucl
+
+      - name: Install rustup targets
+        run: rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu
+
       # Cargo publish (once!)
       - name: Cargo publish crate
         if: ${{ matrix.cpu_target == env.BASE_CPU }}
         run: cargo publish --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Install Linux and Windows Cross Compilers
-        run: sudo apt-get install --yes --no-install-recommends musl-tools gcc-mingw-w64-x86-64-win32 nasm upx-ucl
-
-      - name: Install rustup targets
-        run: rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu
 
       - name: Build binaries
         env:
@@ -96,8 +96,8 @@ jobs:
       - name: Upload binaries to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Release ${{ github.ref }}
-          tag_name: ${{ github.ref }}
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
           files: current_release/*
 
   publish_docker:
@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -134,7 +134,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Push README.md to Dockerhub
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
