@@ -8,6 +8,7 @@ pub mod webp_image;
 pub mod png;
 mod mozjpeg;
 
+use std::error::Error as StdError;
 use crate::{converter::webp::encode_webp, converter::avif::encode_avif, converter::png::encode_png, converter::webp_image::encode_webp_image, format::ImageFormat, utils::is_supported, Error};
 use image::ImageReader;
 use rayon::prelude::*;
@@ -49,6 +50,43 @@ pub struct CommonConfig {
     /// Discards the encoding result if it is larger than the input file (does not create an output file).
     /// Defaults to false.
     pub discard_if_larger_than_input: bool,
+}
+
+fn handle_conversion_error(path: PathBuf, err: Box<dyn StdError + Send + Sync>) -> (i32, i32, i32) {
+    if contains_exact_message(&*err, "Illegal start bytes:") {
+        if contains_exact_message(&*err, "8950") {
+            // Construct the new path with `.png` extension
+            let mut new_path = path.clone();
+            new_path.set_extension("png");
+
+            // Try to move (rename) the file
+            match fs::rename(&path, &new_path) {
+                Ok(_) => {
+                    println!("Detected and moved imposter PNG in file {:?} to {:?} !", &path, new_path);
+                }
+                Err(e) => {
+                    println!("Failed to move imposter PNG in file {:?} to {:?}: {}", &path, new_path, e);
+                }
+            }
+        } else {
+            println!("File {}: Unexpected error: {}", path.display() , err);
+        }
+        (-2, 0, 0)
+    } else {
+        println!("File {}: Unexpected error: {}", path.display() , err);
+        (-2, 0, 0) // generic fallback
+    }
+}
+
+fn contains_exact_message(err: &(dyn StdError + 'static), target: &str) -> bool {
+    let mut current: Option<&(dyn StdError + 'static)> = Some(err);
+    while let Some(e) = current {
+        if e.to_string().contains(target) {
+            return true;
+        }
+        current = e.source();
+    }
+    false
 }
 
 /// Processes and encodes images in a given directory to the specified image format.
@@ -138,7 +176,7 @@ pub fn convert_images(
                      option_avif_bit_depth, option_avif_color_model, option_avif_alpha_color_mode, option_avif_alpha_quality
                  )
             }
-            .map_err(|err| eprintln!("Failed to convert image {:?} : {:?}", path, err)).unwrap_or_else(|_| (-2, 0, 0))
+            .map_err(|err| handle_conversion_error(path, err)).unwrap_or_else(|_| (-2, 0, 0))
         )
         .collect();
 
@@ -187,7 +225,7 @@ fn convert_image(
     option_avif_color_model: &Option<ColorModel>,
     option_avif_alpha_color_mode: &Option<AlphaColorMode>,
     option_avif_alpha_quality: &Option<f32>,
-) -> Result<(isize, usize, usize), Error> {
+) -> Result<(isize, usize, usize), Box<dyn StdError + Send + Sync>> {
     // returns tuple (status, input_size (B), output_size (B))
     let ext = img_format.extension();
     let output_path;
@@ -221,7 +259,7 @@ fn convert_image(
             *option_avif_alpha_color_mode, option_avif_alpha_quality.unwrap_or(90.))?,
         ImageFormat::Png => encode_png(&image, *option_png_compression_type, *option_png_filter_type)?,
         ImageFormat::Jpeg => encode_mozjpeg(&image)?,
-        _ => return Err(Error::from_string("Unsupported image format".to_string())),
+        _ => return Err(Box::new(Error::from_string("Unsupported image format".to_string()))),
     };
 
     let output_size =  image_data.len();
