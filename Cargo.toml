@@ -37,6 +37,7 @@ rgb = "0.8.52"
 indicatif = {version = "0.18.2", features = ["rayon"]}
 bytesize = "2.1.0"
 mozjpeg = "0.10.13"
+jpeg-decoder = "0.3.2"
 
 [build-dependencies]
 cargo_metadata = "0.23.0"

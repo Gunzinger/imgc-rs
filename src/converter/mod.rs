@@ -8,22 +8,30 @@ pub mod webp_image;
 pub mod png;
 mod mozjpeg;
 
-use std::error::Error as StdError;
-use crate::{converter::webp::encode_webp, converter::avif::encode_avif, converter::png::encode_png, converter::webp_image::encode_webp_image, format::ImageFormat, utils::is_supported, Error};
-use image::ImageReader;
-use rayon::prelude::*;
+use crate::{
+    converter::avif::encode_avif,
+    converter::avif::{AlphaColorMode, BitDepth, ColorModel},
+    converter::webp::encode_webp,
+    converter::webp_image::encode_webp_image,
+    converter::png::encode_png,
+    converter::png::{CompressionType, FilterType},
+    converter::mozjpeg::encode_mozjpeg,
+    format::ImageFormat,
+    utils::is_supported,
+    Error,
+};
 use std::{
+    collections::{LinkedList},
     fs,
     path::{Path, PathBuf},
+    error::Error as StdError,
+    sync::{Arc, atomic::AtomicBool},
 };
-use std::collections::{LinkedList};
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use image::{ImageReader, ImageFormat as ImageImageFormat, DynamicImage, RgbImage};
+use rayon::prelude::*;
 use bytesize::ByteSize;
 use indicatif::{ParallelProgressIterator, ProgressStyle};
-use crate::converter::avif::{AlphaColorMode, BitDepth, ColorModel};
-use crate::converter::mozjpeg::encode_mozjpeg;
-use crate::converter::png::{CompressionType, FilterType};
+use jpeg_decoder::Decoder;
 
 // Include dependency version numbers
 include!(concat!(env!("OUT_DIR"), "/versions.rs"));
@@ -53,40 +61,8 @@ pub struct CommonConfig {
 }
 
 fn handle_conversion_error(path: PathBuf, err: Box<dyn StdError + Send + Sync>) -> (i32, i32, i32) {
-    if contains_exact_message(&*err, "Illegal start bytes:") {
-        if contains_exact_message(&*err, "8950") {
-            // Construct the new path with `.png` extension
-            let mut new_path = path.clone();
-            new_path.set_extension("png");
-
-            // Try to move (rename) the file
-            match fs::rename(&path, &new_path) {
-                Ok(_) => {
-                    println!("Detected and moved imposter PNG in file {:?} to {:?} !", &path, new_path);
-                }
-                Err(e) => {
-                    println!("Failed to move imposter PNG in file {:?} to {:?}: {}", &path, new_path, e);
-                }
-            }
-        } else {
-            println!("File {}: Unexpected error: {}", path.display() , err);
-        }
-        (-2, 0, 0)
-    } else {
-        println!("File {}: Unexpected error: {}", path.display() , err);
-        (-2, 0, 0) // generic fallback
-    }
-}
-
-fn contains_exact_message(err: &(dyn StdError + 'static), target: &str) -> bool {
-    let mut current: Option<&(dyn StdError + 'static)> = Some(err);
-    while let Some(e) = current {
-        if e.to_string().contains(target) {
-            return true;
-        }
-        current = e.source();
-    }
-    false
+    println!("File {}: could not be converted, error: {}", path.display() , err);
+    (-2, 0, 0)
 }
 
 /// Processes and encodes images in a given directory to the specified image format.
@@ -208,6 +184,69 @@ pub fn convert_images(
     Ok(())
 }
 
+fn try_read_image(input_path: &Path) -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
+    // first try with autodetection
+    let result = (|| -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
+        Ok(ImageReader::open(input_path)?.decode()?)
+    })();
+
+    if result.is_ok() {
+        return result;
+    }
+
+    let err = result.err().unwrap();
+    let msg = err.to_string();
+    
+    // "Illegal start bytes:8950" => imposter png hiding in other file extension
+    if msg.contains("Illegal start bytes") && msg.contains("8950") {
+        let mut reader = ImageReader::open(input_path)?;
+        reader.set_format(ImageImageFormat::Png);
+        if let Ok(decoded) = reader.decode() {
+            return Ok(decoded);
+        }
+    }
+
+    // Otherwise try generic extension based fallbacks, legacy pjpeg, x-png, etc.
+    let ext = input_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    // 2️⃣ If it's a JPEG-like file, try jpeg-decoder
+    if ext == "pjpeg" || ext == "jpg" || ext == "jpeg" {
+        //println!("image-rs could not load: {}; retrying with jpeg-decoder...", input_path.display());
+        if let Ok(file) = fs::File::open(input_path) {
+            let mut decoder = Decoder::new(file);
+            if let Ok(pixels) = decoder.decode() {
+                if let Some(info) = decoder.info() {
+                    // Convert raw pixels to RgbImage
+                    let img = RgbImage::from_raw(
+                        info.width.into(),
+                        info.height.into(),
+                        pixels,
+                    )
+                        .ok_or("Failed to convert jpeg-decoder output to RgbImage")?;
+                    return Ok(DynamicImage::ImageRgb8(img));
+                }
+            }
+        }
+    }
+
+    let mut reader = ImageReader::open(input_path)?;
+    match ext.as_str() {
+        "pjpeg" | "jpg" | "jpeg" => reader.set_format(ImageImageFormat::Jpeg),
+        "x-png" | "png" => reader.set_format(ImageImageFormat::Png),
+        _ => return Err(err), // nothing else to try
+    }
+
+    if let Ok(decoded) = reader.decode() {
+        Ok(decoded)
+    } else {
+        Err(err)
+    }
+}
+
 /// Encodes an image to the specified image format and saves it to the specified output directory.
 fn convert_image(
     input_path: &Path,
@@ -243,7 +282,7 @@ fn convert_image(
         return Ok((-1, 0, 0))
     }
 
-    let image = ImageReader::open(input_path)?.decode()?;
+    let image = try_read_image(input_path)?;
 
     let encode_lossless = option_lossless.unwrap_or(false);
     let encode_quality: f32 = option_quality.unwrap_or(90.);
