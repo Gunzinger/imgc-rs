@@ -48,9 +48,9 @@ jobs:
       - name: Set Cargo.toml version
         shell: bash
         run: |
-          sed -i "s/0\\.0\\.0-git/$VERSION/" Cargo.toml
+          sed -i "s/0\\.0\\.0-git/${VERSION}/" Cargo.toml
           head -n 5 Cargo.toml
-          sed -i "s/0\\.0\\.0-git/$VERSION/" Cargo.lock
+          sed -i "s/0\\.0\\.0-git/${VERSION}/" Cargo.lock
           grep -i -C 5 "imgc" Cargo.lock
 
       - name: Install Linux and Windows Cross Compilers
@@ -69,7 +69,7 @@ jobs:
       - name: Build binaries
         env:
           RUSTFLAGS: "-C target-cpu=${{ matrix.cpu_target }}"
-          VERSION: ${{ needs.create_release.outputs.version }}
+        shell: bash
         run: |
           echo "Building for CPU: ${{ matrix.cpu_target }}"
           
@@ -78,20 +78,20 @@ jobs:
           else
             SUFFIX="-${{ matrix.cpu_target }}"
           fi
-          BIN_LINUX="imgc-$VERSION$SUFFIX"
-          BIN_WIN="imgc-$VERSION$SUFFIX.exe"
+          BIN_LINUX="imgc-${VERSION}${SUFFIX}"
+          BIN_WIN="imgc-${VERSION}${SUFFIX}.exe"
           
           cargo build --release --target x86_64-unknown-linux-musl --target x86_64-pc-windows-gnu
           
           # pack linux binary
-          cp target/x86_64-unknown-linux-musl/release/imgc current_release/$BIN_LINUX
-          upx --best --ultra-brute current_release/$BIN_LINUX
-          shasum -a 256 current_release/$BIN_LINUX > current_release/$BIN_LINUX.sha256
+          cp target/x86_64-unknown-linux-musl/release/imgc current_release/${BIN_LINUX}
+          upx --best --ultra-brute current_release/${BIN_LINUX}
+          shasum -a 256 current_release/${BIN_LINUX} > current_release/${BIN_LINUX}.sha256
 
           # pack windows binary
-          cp target/x86_64-pc-windows-gnu/release/imgc.exe current_release/$BIN_WIN
-          upx --best --ultra-brute current_release/$BIN_WIN
-          shasum -a 256 current_release/$BIN_WIN > current_release/$BIN_WIN.sha256
+          cp target/x86_64-pc-windows-gnu/release/imgc.exe current_release/${BIN_WIN}
+          upx --best --ultra-brute current_release/${BIN_WIN}
+          shasum -a 256 current_release/${BIN_WIN} > current_release/${BIN_WIN}.sha256
 
       - name: Upload binaries to GitHub Release
         uses: softprops/action-gh-release@v2
