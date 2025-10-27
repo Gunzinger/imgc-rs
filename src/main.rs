@@ -30,7 +30,7 @@ fn main() -> Result<(), Error> {
             => convert_images(conf, &ImageFormat::Png, &None, &None, &None, &compression_type, &filter_type, &None, &None, &None, &None)?,
         Command::Jpeg {}
             => convert_images(conf, &ImageFormat::Jpeg, &None, &None, &None, &None, &None, &None, &None, &None, &None)?,
-        Command::Clean { pattern } => remove_files(&pattern)?,
+        Command::Clean {} => remove_files(&conf.pattern)?,
     }
     Ok(())
 }

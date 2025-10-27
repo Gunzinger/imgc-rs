@@ -1,0 +1,6 @@
+[build]
+rustflags = [
+    "-C", "target-cpu=x86-64-v3", # intel haswell / amd zen and later; avx2
+    # see: rustc --print target-cpus ; e.g. x86-64, x86-64-v3, x86-64-v4, znver3, znver5
+    # see: https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels
+]

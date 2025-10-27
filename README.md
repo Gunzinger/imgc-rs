@@ -84,10 +84,10 @@ See the [Docker Hub](https://hub.docker.com/r/gunzinger/imgc-rs) page for availa
 docker run -it gunzinger/imgc-rs:latest imgc --help
 
 # directory passthrough on linux
-docker run -v ./input-folder/:/targets/ -it gunzinger/imgc-rs:latest imgc avif "/targets/**/*.png"
+docker run -v ./input-folder/:/targets/ -it gunzinger/imgc-rs:latest imgc "/targets/**/*.png" avif
 
 # note that on windows the volume passthroughs need to have absolute paths, e.g. (for powershell)
-docker run -v ${PWD}/input-folder/:/targets/ -it gunzinger/imgc-rs:latest imgc avif "/targets/**/*.png"
+docker run -v ${PWD}/input-folder/:/targets/ -it gunzinger/imgc-rs:latest imgc "/targets/**/*.png" avif
 
 ```
 
@@ -100,15 +100,15 @@ docker run -v ${PWD}/input-folder/:/targets/ -it gunzinger/imgc-rs:latest imgc a
 The `imgc` program uses glob patterns for target selection:
 
 ```bash
-imgc webp "examples/**/*.png"
-imgc webp "examples/**/*.jpg"
-imgc webp "examples/**/*"
+imgc "examples/**/*.png" webp
+imgc "examples/**/*.jpg" webp
+imgc "examples/**/*" webp
 ```
 
 ### Specifying an output directory 🗃️
 
 ```bash
-imgc webp "examples/**/*" -o output_images
+imgc "examples/**/*" webp -o output_images
 ```
 
 ### Cleaning up generated files 🧹
@@ -116,7 +116,7 @@ imgc webp "examples/**/*" -o output_images
 **Warning**: Use this command with caution. This is basically `rm -rf` with regex.
 
 ```bash
-imgc clean "examples/**/*.webp"
+imgc "examples/**/*.webp" clean
 ```
 
 ---
@@ -158,24 +158,29 @@ For the `webp` command:
 ❯ imgc webp --help                                     
 Convert images to webp format (using webp crate)
 
-Usage: imgc <PATTERN> webp [OPTIONS]
+Usage: imgc  <PATTERN> webp [OPTIONS]
 
 Options:
-      --lossless           Use lossless encoding mode. Defaults to false
-  -q, --quality <QUALITY>  Control target quality (0 - 100, lower is worse but results in smaller files). Defaults to 90.0
-  -h, --help               Print help
+      --lossless                      Use lossless encoding mode. Defaults to false
+  -q, --quality <QUALITY>             Control target quality (0 - 100, lower is worse but results in smaller files). Defaults to 90.0
+  -o, --output <OUTPUT>               Output directory (flat) of processed images. Defaults to the same location as the original images with the new file extension
+      --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
+      --overwrite-existing            Overwrite existing output files regardless of size
+      --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+  -h, --help                          Print help
 ```
 
 For the `webp-image` command:
 
 ```bash
-❯ imgc webp-image --help                                     
-Convert images to webp format (using image crate)
-
-Usage: imgc <PATTERN> webp-image
+❯ imgc <PATTERN> webp-image [OPTIONS]
 
 Options:
--h, --help  Print help
+  -o, --output <OUTPUT>               Output directory (flat) of processed images. Defaults to the same location as the original images with the new file extension
+      --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
+      --overwrite-existing            Overwrite existing output files regardless of size
+      --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+  -h, --help                          Print help
 ```
 
 For the `avif` command:
@@ -199,6 +204,14 @@ Options:
           Choose internal alpha color mode. (in the generated avif file, nothing to do with the input file) Irrelevant for images without transparency [possible values: unassociated-dirty, unassociated-clean, premultiplied]
   -a, --alpha-quality <ALPHA_QUALITY>
           Control target alpha quality (0 - 100, lower is worse). Defaults to 90.0
+  -o, --output <OUTPUT>
+          Output directory (flat) of processed images. Defaults to the same location as the original images with the new file extension
+      --overwrite-if-smaller
+          Overwrite the existing output file if the current conversion resulted in a smaller file
+      --overwrite-existing
+          Overwrite existing output files regardless of size
+      --discard-if-larger-than-input
+          Discards the encoding result if it is larger than the input file (does not create an output file)
   -h, --help
           Print help
 ```
@@ -209,20 +222,34 @@ For the `png` command:
 ❯ imgc png --help                                     
 Convert images to png format (using image crate)
 
-Usage: imgc <PATTERN> png
+Usage: imgc <PATTERN> png [OPTIONS]
 
 Options:
       --compression-type <COMPRESSION_TYPE>
           Choose the png compression type
+          
           See: https://docs.rs/image/latest/image/codecs/png/enum.CompressionType.html
-
+          
           [possible values: default, fast, best]
+
       --filter-type <FILTER_TYPE>
           Choose the png filter type
-
+          
           See: https://docs.rs/image/latest/image/codecs/png/enum.CompressionType.html
-
+          
           [possible values: no-filter, sub, up, avg, paeth, adaptive]
+
+  -o, --output <OUTPUT>
+          Output directory (flat) of processed images. Defaults to the same location as the original images with the new file extension
+
+      --overwrite-if-smaller
+          Overwrite the existing output file if the current conversion resulted in a smaller file
+
+      --overwrite-existing
+          Overwrite existing output files regardless of size
+
+      --discard-if-larger-than-input
+          Discards the encoding result if it is larger than the input file (does not create an output file)
 
   -h, --help
           Print help (see a summary with '-h')
@@ -231,28 +258,28 @@ Options:
 For the `jpeg` command (unstable; likes to crash! this is a work in progress!):
 
 ```bash
-❯ imgc jpeg --help                                     
-Convert images to webp format (using mozjpeg crate)
-
-Usage: imgc <PATTERN> jpeg
+❯ imgc <PATTERN> jpeg [OPTIONS]
 
 Options:
--h, --help  Print help
+  -o, --output <OUTPUT>               Output directory (flat) of processed images. Defaults to the same location as the original images with the new file extension
+      --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
+      --overwrite-existing            Overwrite existing output files regardless of size
+      --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+  -h, --help                          Print help
 ```
 
 For the `clean` command:
 
 ```bash
-> imgc clean --help                  
-Remove files matching a glob pattern
-
-Usage: imgc clean <PATTERN>
-
-Arguments:
-  <PATTERN>  Glob pattern to match files to remove
+> imgc <PATTERN> clean [OPTIONS]
 
 Options:
-  -h, --help  Print help
+  -o, --output <OUTPUT>               Output directory (flat) of processed images. Defaults to the same location as the original images with the new file extension
+      --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
+      --overwrite-existing            Overwrite existing output files regardless of size
+      --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+  -h, --help                          Print help
+
 ```
 
 ---

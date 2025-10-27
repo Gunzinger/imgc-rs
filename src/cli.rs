@@ -5,9 +5,7 @@ use clap::{ArgAction, Parser, Subcommand};
 #[command(
     version,
     about,
-    long_about = None,
-    subcommand_precedence_over_arg = true,
-    args_conflicts_with_subcommands = true,
+    long_about = None
 )]
 pub struct CliArgs {
     /// The command to execute.
@@ -108,8 +106,5 @@ pub enum Command {
     Jpeg {},
 
     /// Remove files matching a glob pattern
-    Clean {
-        /// Glob pattern to match files to remove.
-        pattern: String,
-    },
+    Clean {},
 }
