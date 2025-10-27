@@ -1,3 +1,8 @@
 /target
 .tmp
 .DS_Store
+
+.idea/
+upx/
+
+data/

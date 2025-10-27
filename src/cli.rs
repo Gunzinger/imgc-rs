@@ -2,33 +2,42 @@ use clap::{ArgAction, Parser, Subcommand};
 
 /// Image converter CLI
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(
+    version,
+    about,
+    long_about = None,
+    subcommand_precedence_over_arg = true,
+    args_conflicts_with_subcommands = true,
+)]
 pub struct CliArgs {
-    /// Glob pattern to match images to convert.
-    /// Example: `images/**/*.png`
-    pub pattern: String,
-
-    /// Output directory (flat) of processed images.
-    /// Defaults to the same location as the original images with the new file extension.
-    #[clap(short, long, default_value = None)]
-    pub output: Option<String>,
-
-    /// Overwrite the existing output file if the current conversion resulted in a smaller file.
-    #[clap(long, action = Some(ArgAction::SetTrue))]
-    pub overwrite_if_smaller: Option<bool>,
-
-    /// Overwrite existing output files regardless of size.
-    #[clap(long, action = Some(ArgAction::SetTrue))]
-    pub overwrite_existing: Option<bool>,
-
-    /// Discards the encoding result if it is larger than the input file (does not create an output file).
-    #[clap(long, action = Some(ArgAction::SetTrue))]
-    pub discard_if_larger_than_input: Option<bool>,
-
     /// The command to execute.
     #[command(subcommand)]
     /// The available commands are `webp`, `webp-image`, `avif`, `png` and `clean`.
     pub command: Command,
+
+    /// Glob pattern to match images to convert.
+    /// Example: `images/**/*.png`
+    //#[clap(global = true)]
+    // arguments can't be global and required
+    // => early exit for no pattern matches
+    pub pattern: String,
+
+    /// Output directory (flat) of processed images.
+    /// Defaults to the same location as the original images with the new file extension.
+    #[clap(short, long, global = true, default_value = None)]
+    pub output: Option<String>,
+
+    /// Overwrite the existing output file if the current conversion resulted in a smaller file.
+    #[clap(long, global = true, action = Some(ArgAction::SetTrue))]
+    pub overwrite_if_smaller: Option<bool>,
+
+    /// Overwrite existing output files regardless of size.
+    #[clap(long, global = true, action = Some(ArgAction::SetTrue))]
+    pub overwrite_existing: Option<bool>,
+
+    /// Discards the encoding result if it is larger than the input file (does not create an output file).
+    #[clap(long, global = true, action = Some(ArgAction::SetTrue))]
+    pub discard_if_larger_than_input: Option<bool>,
 }
 
 /// Image converter actions
