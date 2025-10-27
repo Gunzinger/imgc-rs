@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        cpu_target: [x86-64-v3, x86-64v3, x86-64-v4, znver3, znver5]
+        cpu_target: [x86-64-v3, x86-64-v4, znver3, znver5]
     name: Build binaries for ${{ matrix.cpu_target }}
     steps:
       - name: Checkout code
