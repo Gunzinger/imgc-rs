@@ -9,7 +9,7 @@
 ### Usage example using the docker container:
 
 ```bash
-> docker run -v ./examples/:/targets/ -it gunzinger/imgc-rs:latest imgc avif "**/*.*"
+> docker run -v ./examples/:/targets/ -it gunzinger/imgc-rs:latest imgc "**/*.*" avif
 Converting 16 files...
 Using "ravif" (0.12.0) with options (quality: 90, speed: 3, bit depth: Eight, color model: RGB)
 Encode statistics:
