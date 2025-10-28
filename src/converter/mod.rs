@@ -17,7 +17,6 @@ use crate::{
     converter::png::{CompressionType, FilterType},
     converter::mozjpeg::encode_mozjpeg,
     format::ImageFormat,
-    utils::is_supported,
     Error,
 };
 use std::{
@@ -66,10 +65,17 @@ fn handle_conversion_error(path: PathBuf, err: Box<dyn StdError + Send + Sync>) 
 }
 
 fn base_from_pattern(pattern: &str) -> String {
-    let before_glob = pattern.split(|c| c == '*' || c == '?' || c == '[')
-        .next()
-        .unwrap_or("");
-    String::from(before_glob)
+    let mut base = PathBuf::new();
+
+    for part in Path::new(pattern) {
+        let s = part.to_string_lossy();
+        if s.contains('*') || s.contains('?') || s.contains('[') {
+            break;
+        }
+        base.push(part);
+    }
+
+    base.to_string_lossy().to_string()
 }
 
 /// Processes and encodes images in a given directory to the specified image format.
@@ -88,11 +94,11 @@ pub fn convert_images(
 ) -> Result<(), Error> {
     let mut paths: Vec<PathBuf> = glob::glob(&*conf.pattern)?
         .filter_map(|entry| entry.ok())
-        // disable reading avif (FIXME: re-enable with reliable build+integration for reader)
-        .filter(|path|
-            (is_supported(path, img_format) && is_supported(path, &ImageFormat::Avif))
-                || ImageFormat::from(path.as_path()) != ImageFormat::Unknown
-        )
+        .filter(|path|{
+            let format = ImageFormat::from(path.as_path());
+            format != ImageFormat::Unknown
+                && format != ImageFormat::Avif // disable reading avif (FIXME: re-enable with reliable build+integration for reader)
+        })
         .collect();
     paths.sort_by(|a,b| a.file_name().cmp(&b.file_name()));
     // TODO: check for collision candidates (same filename but different extensions => same encoded output filename format...)
@@ -254,6 +260,28 @@ fn try_read_image(input_path: &Path) -> Result<DynamicImage, Box<dyn StdError + 
     }
 }
 
+fn normalize_prefix<P: AsRef<Path>>(p: P) -> PathBuf {
+    let path = p.as_ref();
+
+    let mut components = path.components().peekable();
+    let mut normalized = PathBuf::new();
+
+    // Skip leading CurrentDir (`.`) if present
+    while let Some(c) = components.peek() {
+        if c.as_os_str() == "." {
+            components.next();
+        } else {
+            break;
+        }
+    }
+
+    for c in components {
+        normalized.push(c);
+    }
+
+    normalized
+}
+
 /// Encodes an image to the specified image format and saves it to the specified output directory.
 fn convert_image(
     input_path: &Path,
@@ -279,12 +307,19 @@ fn convert_image(
     if output.is_empty() {
         output_path = input_path.with_extension(ext)
     } else {
+        let pattern_base_norm = normalize_prefix(&pattern_base);
+        let input_path_norm = normalize_prefix(&input_path);
+        let rel_path = input_path_norm
+            .strip_prefix(&pattern_base_norm)
+            .unwrap_or_else(|_| Path::new(&input_path_norm));
+        println!("Strip prefix input: {:?}, base: {:?}, result {:?}", input_path, pattern_base_norm, rel_path);
+
         output_path = Path::new(&output)
-            .join(input_path.strip_prefix(pattern_base.clone()).unwrap().parent().unwrap())
-            .join(input_path.file_stem().unwrap())
+            .join(rel_path.parent().unwrap_or_else(|| Path::new("")))
+            .join(input_path_norm.file_stem().unwrap())
             .with_extension(ext);
 
-        fs::create_dir_all(Path::new(&output).join(input_path.strip_prefix(pattern_base.clone()).unwrap().parent().unwrap()))?;
+        fs::create_dir_all(Path::new(&output).join(rel_path.parent().unwrap_or_else(|| Path::new(""))))?;
     };
 
     if fs::exists(output_path.clone())? && !overwrite_existing && !overwrite_if_smaller {
