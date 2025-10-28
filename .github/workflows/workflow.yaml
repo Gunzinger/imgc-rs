@@ -59,6 +59,9 @@ jobs:
       - name: Install rustup targets
         run: rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu
 
+      # rust package / target cache
+      - uses: Swatinem/rust-cache@v2
+
       # Cargo publish (once!)
       - name: Cargo publish crate
         if: ${{ matrix.cpu_target == env.BASE_CPU }}

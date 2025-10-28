@@ -25,11 +25,14 @@ use std::{
     path::{Path, PathBuf},
     error::Error as StdError,
     sync::{Arc, atomic::AtomicBool},
+    panic
 };
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use image::{ImageReader, ImageFormat as ImageImageFormat, DynamicImage, RgbImage};
 use rayon::prelude::*;
 use bytesize::ByteSize;
-use indicatif::{ParallelProgressIterator, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use jpeg_decoder::Decoder;
 
 // Include dependency version numbers
@@ -100,7 +103,15 @@ pub fn convert_images(
                 && format != ImageFormat::Avif // disable reading avif (FIXME: re-enable with reliable build+integration for reader)
         })
         .collect();
-    paths.sort_by(|a,b| a.file_name().cmp(&b.file_name()));
+    // sort paths lexicographically, not only filenames
+    paths.sort_by(|a, b| {
+        let dir_cmp = a.parent().cmp(&b.parent());
+        if dir_cmp != std::cmp::Ordering::Equal {
+            dir_cmp
+        } else {
+            a.file_name().cmp(&b.file_name())
+        }
+    });
     // TODO: check for collision candidates (same filename but different extensions => same encoded output filename format...)
     //  and come up with a solution
     let pattern_base = base_from_pattern(&conf.pattern);
@@ -148,25 +159,57 @@ pub fn convert_images(
         ctrlc_counter += 1;
     }).expect("Error setting Ctrl-C handler");
 
-    let style = ProgressStyle::with_template("[{elapsed_precise}/~{duration_precise} ({eta_precise} rem.)] {wide_bar:.cyan/blue} {pos:>7}/{len:7}").unwrap();
-    let _results: LinkedList<(isize, usize, usize)> = paths.clone()
-        .into_par_iter()
-        .progress_with_style(style)
-        .map(|path|
-            if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+
+    let (tx, rx) = mpsc::channel::<PathBuf>();
+    let total = paths.len() as u64;
+    // producer thread: feed paths in lexicographic order
+    std::thread::spawn(move || {
+        for path in paths {
+            if tx.send(path).is_err() {
+                break; // consumer dropped, exit
+            }
+        }
+        // close the channel
+        drop(tx);
+    });
+
+    let pb = ProgressBar::new(total);
+    let style = ProgressStyle::with_template("[{elapsed_precise}/~{duration_precise} ({eta_precise} rem.)] {wide_bar:.cyan/blue} {pos:>7}/{len:7} | {msg}").unwrap();
+    pb.set_style(style);
+    let success = Arc::new(AtomicUsize::new(0));
+    let error = Arc::new(AtomicUsize::new(0));
+    let skipped = Arc::new(AtomicUsize::new(0));
+
+    let _results: LinkedList<(isize, usize, usize)> = rx.into_iter()
+        .par_bridge()
+        .map(|path| {
+            let res = if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
                 return (-1, 0, 0);
             } else {
-                 convert_image(
-                     &*path, img_format,
-                     conf.output.clone(), pattern_base.clone(), conf.overwrite_if_smaller,
-                     conf.overwrite_existing, conf.discard_if_larger_than_input,
-                     option_lossless, option_quality, option_speed,
-                     option_png_compression_type, option_png_filter_type,
-                     option_avif_bit_depth, option_avif_color_model, option_avif_alpha_color_mode, option_avif_alpha_quality
-                 )
+                convert_image(
+                    &*path, img_format,
+                    conf.output.clone(), pattern_base.clone(), conf.overwrite_if_smaller,
+                    conf.overwrite_existing, conf.discard_if_larger_than_input,
+                    option_lossless, option_quality, option_speed,
+                    option_png_compression_type, option_png_filter_type,
+                    option_avif_bit_depth, option_avif_color_model, option_avif_alpha_color_mode, option_avif_alpha_quality
+                )
+            }.map_err(|err| handle_conversion_error(path, err)).unwrap_or_else(|_| (-2, 0, 0));
+            pb.inc(1); // increment progress bar counter
+            match res.0 {
+                0 => { success.fetch_add(1, Ordering::SeqCst); }, // improve: track input/output size here and show interactively
+                -1 => { skipped.fetch_add(1, Ordering::SeqCst); },
+                -2 => { error.fetch_add(1, Ordering::SeqCst); },
+                _ => {}
             }
-            .map_err(|err| handle_conversion_error(path, err)).unwrap_or_else(|_| (-2, 0, 0))
-        )
+            pb.set_message(format!(
+                "✔ {} — {} ✖ {}",
+                success.load(Ordering::SeqCst),
+                skipped.load(Ordering::SeqCst),
+                error.load(Ordering::SeqCst)
+            ));
+            res
+        })
         .collect();
 
     let encode_successful = _results.par_iter()
@@ -197,26 +240,9 @@ pub fn convert_images(
     Ok(())
 }
 
-fn try_read_image(input_path: &Path) -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
-    // first try with autodetection
-    let mut result = (|| -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
-        Ok(ImageReader::open(input_path)?.decode()?)
-    })();
-
-    if result.is_ok() {
-        return result;
-    }
-
-    // retry with guessed format (we have pngs hiding in jpeg extension files, jpg inside bmp, etc. ...)
-    result = (|| -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
-        Ok(ImageReader::open(input_path)?.with_guessed_format()?.decode()?)
-    })();
-
-    if result.is_ok() {
-        return result;
-    }
-
-    let err = result.err().unwrap();
+fn fallback_retry_read_image(input_path: &Path, input_error: Box<dyn StdError + Send + Sync>)
+    -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
+    let err = input_error;
     let ext = input_path
         .extension().and_then(|e| e.to_str())
         .unwrap_or("").to_ascii_lowercase();
@@ -251,6 +277,35 @@ fn try_read_image(input_path: &Path) -> Result<DynamicImage, Box<dyn StdError + 
         Ok(decoded)
     } else {
         Err(err)
+    }
+}
+
+fn try_read_image(input_path: &Path)
+    -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
+    // first try with autodetection, unfortunately zune panics on one of the input images...
+    let mut result = panic::catch_unwind(|| {
+        Ok(ImageReader::open(input_path)?.decode()?)
+    });
+
+    if let Ok(inner) = result {
+        if let Ok(img) = inner {
+            return Ok(img); // ✅ move out
+        }
+    }
+
+    // retry with guessed format (we have pngs hiding in jpeg extension files, jpg inside bmp, etc. ...)
+    result = panic::catch_unwind(|| {
+        Ok(ImageReader::open(input_path)?.with_guessed_format()?.decode()?)
+    });
+
+    if let Ok(inner) = result {
+        if let Ok(img) = inner {
+            return Ok(img); // ✅ move out
+        } else {
+            fallback_retry_read_image(input_path, inner.err().unwrap())
+        }
+    } else {
+        fallback_retry_read_image(input_path, result.unwrap().err().unwrap())
     }
 }
 
