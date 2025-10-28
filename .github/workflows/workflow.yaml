@@ -35,6 +35,8 @@ jobs:
       matrix:
         cpu_target: [x86-64-v3, x86-64-v4, znver3, znver5]
     name: Build binaries for ${{ matrix.cpu_target }}
+    env:
+      RUSTFLAGS: "-C target-cpu=${{ matrix.cpu_target }}"
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -70,8 +72,6 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_API_TOKEN }}
 
       - name: Build binaries
-        env:
-          RUSTFLAGS: "-C target-cpu=${{ matrix.cpu_target }}"
         shell: bash
         run: |
           echo "Building for CPU: ${{ matrix.cpu_target }}"
