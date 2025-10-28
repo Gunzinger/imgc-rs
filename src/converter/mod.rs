@@ -199,7 +199,7 @@ pub fn convert_images(
 
 fn try_read_image(input_path: &Path) -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
     // first try with autodetection
-    let result = (|| -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
+    let mut result = (|| -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
         Ok(ImageReader::open(input_path)?.decode()?)
     })();
 
@@ -207,28 +207,22 @@ fn try_read_image(input_path: &Path) -> Result<DynamicImage, Box<dyn StdError + 
         return result;
     }
 
-    let err = result.err().unwrap();
-    let msg = err.to_string();
-    
-    // "Illegal start bytes:8950" => imposter png hiding in other file extension
-    if msg.contains("Illegal start bytes") && msg.contains("8950") {
-        let mut reader = ImageReader::open(input_path)?;
-        reader.set_format(ImageImageFormat::Png);
-        if let Ok(decoded) = reader.decode() {
-            return Ok(decoded);
-        }
+    // retry with guessed format (we have pngs hiding in jpeg extension files, jpg inside bmp, etc. ...)
+    result = (|| -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
+        Ok(ImageReader::open(input_path)?.with_guessed_format()?.decode()?)
+    })();
+
+    if result.is_ok() {
+        return result;
     }
 
-    // Otherwise try generic extension based fallbacks, legacy pjpeg, x-png, etc.
+    let err = result.err().unwrap();
     let ext = input_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
+        .extension().and_then(|e| e.to_str())
+        .unwrap_or("").to_ascii_lowercase();
 
-    // 2️⃣ If it's a JPEG-like file, try jpeg-decoder
+    // try jpeg-decoder to support loading progressive jpegs
     if ext == "pjpeg" || ext == "jpg" || ext == "jpeg" {
-        //println!("image-rs could not load: {}; retrying with jpeg-decoder...", input_path.display());
         if let Ok(file) = fs::File::open(input_path) {
             let mut decoder = Decoder::new(file);
             if let Ok(pixels) = decoder.decode() {
