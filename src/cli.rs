@@ -10,7 +10,6 @@ use clap::{ArgAction, Parser, Subcommand};
 pub struct CliArgs {
     /// The command to execute.
     #[command(subcommand)]
-    /// The available commands are `webp`, `webp-image`, `avif`, `png` and `clean`.
     pub command: Command,
 
     /// Glob pattern to match images to convert.
@@ -22,6 +21,7 @@ pub struct CliArgs {
 
     /// Output directory (flat) of processed images.
     /// Defaults to the same location as the original images with the new file extension.
+    /// If set, replaces the fixed base of the pattern directory structure of the input pattern. (before any * in the glob pattern)
     #[clap(short, long, global = true, default_value = None)]
     pub output: Option<String>,
 

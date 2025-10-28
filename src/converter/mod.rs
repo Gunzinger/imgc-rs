@@ -65,6 +65,13 @@ fn handle_conversion_error(path: PathBuf, err: Box<dyn StdError + Send + Sync>) 
     (-2, 0, 0)
 }
 
+fn base_from_pattern(pattern: &str) -> String {
+    let before_glob = pattern.split(|c| c == '*' || c == '?' || c == '[')
+        .next()
+        .unwrap_or("");
+    String::from(before_glob)
+}
+
 /// Processes and encodes images in a given directory to the specified image format.
 pub fn convert_images(
     conf: CommonConfig,
@@ -79,7 +86,6 @@ pub fn convert_images(
     option_avif_alpha_color_mode: &Option<AlphaColorMode>,
     option_avif_alpha_quality: &Option<f32>,
 ) -> Result<(), Error> {
-
     let mut paths: Vec<PathBuf> = glob::glob(&*conf.pattern)?
         .filter_map(|entry| entry.ok())
         // disable reading avif (FIXME: re-enable with reliable build+integration for reader)
@@ -91,6 +97,7 @@ pub fn convert_images(
     paths.sort_by(|a,b| a.file_name().cmp(&b.file_name()));
     // TODO: check for collision candidates (same filename but different extensions => same encoded output filename format...)
     //  and come up with a solution
+    let pattern_base = base_from_pattern(&conf.pattern);
 
     if paths.is_empty() {
         println!("No images to convert, check input glob pattern and supported input formats.");
@@ -145,7 +152,7 @@ pub fn convert_images(
             } else {
                  convert_image(
                      &*path, img_format,
-                     conf.output.clone(), conf.overwrite_if_smaller,
+                     conf.output.clone(), pattern_base.clone(), conf.overwrite_if_smaller,
                      conf.overwrite_existing, conf.discard_if_larger_than_input,
                      option_lossless, option_quality, option_speed,
                      option_png_compression_type, option_png_filter_type,
@@ -252,6 +259,7 @@ fn convert_image(
     input_path: &Path,
     img_format: &ImageFormat,
     output: String,
+    pattern_base: String,
     overwrite_if_smaller: bool,
     overwrite_existing: bool,
     discard_if_larger_than_input: bool,
@@ -272,8 +280,11 @@ fn convert_image(
         output_path = input_path.with_extension(ext)
     } else {
         output_path = Path::new(&output)
+            .join(input_path.strip_prefix(pattern_base.clone()).unwrap().parent().unwrap())
             .join(input_path.file_stem().unwrap())
-            .with_extension(ext)
+            .with_extension(ext);
+
+        fs::create_dir_all(Path::new(&output).join(input_path.strip_prefix(pattern_base.clone()).unwrap().parent().unwrap()))?;
     };
 
     if fs::exists(output_path.clone())? && !overwrite_existing && !overwrite_if_smaller {
