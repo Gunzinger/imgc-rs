@@ -312,7 +312,6 @@ fn convert_image(
         let rel_path = input_path_norm
             .strip_prefix(&pattern_base_norm)
             .unwrap_or_else(|_| Path::new(&input_path_norm));
-        println!("Strip prefix input: {:?}, base: {:?}, result {:?}", input_path, pattern_base_norm, rel_path);
 
         output_path = Path::new(&output)
             .join(rel_path.parent().unwrap_or_else(|| Path::new("")))
