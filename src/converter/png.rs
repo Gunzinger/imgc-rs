@@ -67,7 +67,8 @@ pub fn encode_png(image: &DynamicImage, compression_type: Option<CompressionType
                 image.width(),
                 image.height(),
                 image::ExtendedColorType::Rgba8,
-            )?;
+            )
+            .map_err(|e| Error::from_string(format!("png encoding failed: {:?}", e)))?;
     } else {
         let source_image = image.to_rgb8();
         image::codecs::png::PngEncoder::new_with_quality(&mut output, ext_compression_type, ext_filter_type)
@@ -76,7 +77,8 @@ pub fn encode_png(image: &DynamicImage, compression_type: Option<CompressionType
                 image.width(),
                 image.height(),
                 image::ExtendedColorType::Rgb8,
-            )?;
+            )
+            .map_err(|e| Error::from_string(format!("png encoding failed: {:?}", e)))?;
     }
     Ok(output)
 }

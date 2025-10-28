@@ -80,7 +80,8 @@ pub fn encode_avif(image: &DynamicImage, quality: f32, speed: u8,
             .with_internal_color_model(convert_color_model_to_ext(color_model))
             .with_alpha_quality(alpha_quality) // TODO: expose parameter
             .with_alpha_color_mode(convert_alpha_color_mode_to_ext(alpha_color_mode)) // internal ravif default
-            .encode_rgba(image).expect("ERROR: could not convert screenshot bitmap to AVIF");
+            .encode_rgba(image)
+            .map_err(|e| Error::from_string(format!("avif encoding failed: {:?}", e)))?;
     } else {
         let source_image = image.to_rgb8();
         let image = Img::new(source_image.as_rgb(), image.width() as usize, image.height() as usize);
@@ -89,7 +90,8 @@ pub fn encode_avif(image: &DynamicImage, quality: f32, speed: u8,
             .with_speed(speed) // speed: 1-10, 10 is fastest, but still slow
             .with_bit_depth(convert_bit_depth_to_ext(bit_depth))
             .with_internal_color_model(convert_color_model_to_ext(color_model))
-            .encode_rgb(image).expect("ERROR: could not convert screenshot bitmap to AVIF");
+            .encode_rgb(image)
+            .map_err(|e| Error::from_string(format!("avif encoding failed: {:?}", e)))?;
     }
     Ok(avif_res.avif_file)
 }

@@ -33,7 +33,7 @@ pub fn encode_webp_image(image: &DynamicImage) -> Result<Vec<u8>, Error> {
                 image.width(),
                 image.height(),
                 image::ExtendedColorType::Rgba8,
-            )?;
+            ).map_err(|e| Error::from_string(format!("webp-image encoding failed: {:?}", e)))?;
     } else {
         let source_image = image.to_rgb8();
         image::codecs::webp::WebPEncoder::new_lossless(&mut output)
@@ -42,7 +42,7 @@ pub fn encode_webp_image(image: &DynamicImage) -> Result<Vec<u8>, Error> {
                 image.width(),
                 image.height(),
                 image::ExtendedColorType::Rgb8,
-            )?;
+            ).map_err(|e| Error::from_string(format!("webp-image encoding failed: {:?}", e)))?;
     }
     Ok(output)
 }

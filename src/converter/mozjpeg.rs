@@ -1,6 +1,7 @@
 use crate::Error;
 use image::{DynamicImage, EncodableLayout};
 use crate::converter::DEPENDENCIES;
+use std::panic;
 
 /// Provides encoder information
 pub fn encoder_info() -> String {
@@ -24,14 +25,18 @@ pub fn encoder_info() -> String {
 
 /// Encodes a `DynamicImage` to bytes of webp format
 pub fn encode_mozjpeg(image: &DynamicImage) -> Result<Vec<u8>, Error> {
-    println!("jpeg1 {} {}", image.width(), image.height());
-    let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
-    println!("jpeg2 {} {}", image.width(), image.height());
-    comp.set_size(image.width() as usize, image.height() as usize);
-    println!("jpeg3 {} {}", image.width(), image.height());
-    let mut comp = comp.start_compress(Vec::new())?;
-    println!("jpeg4 {} {}", image.width(), image.height());
-    comp.write_scanlines(image.to_rgb8().as_bytes())?; // this step seems to crash for many input files
-    println!("jpeg5 {} {}", image.width(), image.height());
-    Ok(comp.finish()?)
+    let result = panic::catch_unwind(|| {
+        let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
+        comp.set_size(image.width() as usize, image.height() as usize);
+
+        let mut comp = comp.start_compress(Vec::new())
+            .map_err(|e| Error::from_string(format!("mozjpeg encoding (start_compress) failed: {:?}", e)))?;
+
+        comp.write_scanlines(image.to_rgb8().as_bytes())
+            .map_err(|e| Error::from_string(format!("mozjpeg encoding (write_scanlines) failed: {:?}", e)))?;
+
+        comp.finish().map_err(|e| Error::from_string(format!("mozjpeg encoding (finish) failed: {:?}", e)))
+    });
+
+    result.unwrap_or_else(|e| Err(Error::from_string(format!("mozjpeg encoding panicked: {:?}", e))))
 }

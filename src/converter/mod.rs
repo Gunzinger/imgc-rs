@@ -302,6 +302,7 @@ fn convert_image(
     option_avif_alpha_quality: &Option<f32>,
 ) -> Result<(isize, usize, usize), Box<dyn StdError + Send + Sync>> {
     // returns tuple (status, input_size (B), output_size (B))
+    // status: 0 = success, -1 = skipped, -2 = error
     let ext = img_format.extension();
     let output_path;
     if output.is_empty() {
@@ -335,42 +336,49 @@ fn convert_image(
 
     let image_data = match img_format {
         // TODO: more PNG lossless optimizers, jpeg xl
-        ImageFormat::Webp => encode_webp(&image, encode_lossless, encode_quality)?,
-        ImageFormat::WebpImage => encode_webp_image(&image)?,
+        ImageFormat::Webp => encode_webp(&image, encode_lossless, encode_quality),
+        ImageFormat::WebpImage => encode_webp_image(&image),
         ImageFormat::Avif => encode_avif(
             &image, encode_quality, encode_speed,
             *option_avif_bit_depth, *option_avif_color_model,
-            *option_avif_alpha_color_mode, option_avif_alpha_quality.unwrap_or(90.))?,
-        ImageFormat::Png => encode_png(&image, *option_png_compression_type, *option_png_filter_type)?,
-        ImageFormat::Jpeg => encode_mozjpeg(&image)?,
+            *option_avif_alpha_color_mode, option_avif_alpha_quality.unwrap_or(90.)),
+        ImageFormat::Png => encode_png(&image, *option_png_compression_type, *option_png_filter_type),
+        ImageFormat::Jpeg => encode_mozjpeg(&image),
         _ => return Err(Box::new(Error::from_string("Unsupported image format".to_string()))),
     };
 
-    let output_size =  image_data.len();
-    if fs::exists(output_path.clone())? &&
-        output_size >= fs::metadata(output_path.clone())?.len() as usize &&
-        overwrite_if_smaller {
-        // overwrite if smaller flag is on, but output exists and is already smaller than our encode
-        //  => abort
-        // TODO: how to propagate this information upwards into statistics?
-        //println!(
-        //    "skipped because output path exists,\
-        //      overwrite_if_smaller is active,\
-        //      but new output is larger than the existing one {}",
-        //    input_path.display());
-        return Ok((-1, 0, 0));
-    }
+    match image_data {
+        Ok(image_data) => {
+            let output_size =  image_data.len();
+            if fs::exists(output_path.clone())? &&
+                output_size >= fs::metadata(output_path.clone())?.len() as usize &&
+                overwrite_if_smaller {
+                // overwrite if smaller flag is on, but output exists and is already smaller than our encode
+                //  => abort
+                // TODO: how to propagate this information upwards into statistics?
+                //println!(
+                //    "skipped because output path exists,\
+                //      overwrite_if_smaller is active,\
+                //      but new output is larger than the existing one {}",
+                //    input_path.display());
+                return Ok((-1, 0, 0));
+            }
 
-    let input_size = fs::metadata(&input_path)?.len() as usize;
-    if discard_if_larger_than_input && output_size >= input_size {
-        // TODO: how to propagate this information upwards into statistics?
-        //println!(
-        //    "skipped because the output is larger than the input,\
-        //      and discard_if_larger_than_input is active {}",
-        //    input_path.display());
-        return Ok((-1, 0, 0));
-    }
+            let input_size = fs::metadata(&input_path)?.len() as usize;
+            if discard_if_larger_than_input && output_size >= input_size {
+                // TODO: how to propagate this information upwards into statistics?
+                //println!(
+                //    "skipped because the output is larger than the input,\
+                //      and discard_if_larger_than_input is active {}",
+                //    input_path.display());
+                return Ok((-1, 0, 0));
+            }
 
-    fs::write(output_path.clone(), image_data)?;
-    Ok((0, input_size, output_size))
+            fs::write(output_path.clone(), image_data)?;
+            Ok((0, input_size, output_size))
+        }
+        Err(e) => {
+            Err(Box::new(Error::from_string(format!("Image encoding failed: {:?}", e))))
+        }
+    }
 }
