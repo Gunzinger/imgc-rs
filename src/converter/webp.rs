@@ -27,8 +27,24 @@ pub fn encoder_info(lossless: bool, qualify: f32) -> String {
 
 /// Encodes a `DynamicImage` to bytes of webp format
 pub fn encode_webp(image: &DynamicImage, lossless: bool, quality: f32) -> Result<Vec<u8>, Error> {
-    let encoder = Encoder::from_image(image)
-        .map_err(|e| Error::from_string(format!("Failed to create encoder: {:?}", e)))?;
+    let converted_image: Option<DynamicImage> = match image {
+        DynamicImage::ImageLuma8(_) => {
+            Some(DynamicImage::ImageRgb8(image.to_rgb8()))
+        },
+        DynamicImage::ImageLumaA8(_) => {
+            Some(DynamicImage::ImageRgba8(image.to_rgba8()))
+        }
+        _ => None,
+    };
+
+    let encoder = if let Some(ref img) = converted_image {
+        // Use the converted image (Luma[A]8 paths are unimplemented in the webp lib :D
+        Encoder::from_image(img)
+            .map_err(|e| Error::from_string(format!("Failed to create encoder: {:?}", e)))?
+    } else {
+        Encoder::from_image(image)
+            .map_err(|e| Error::from_string(format!("Failed to create encoder: {:?}", e)))?
+    };
 
     let webp_data = encoder
         .encode_simple(lossless, quality)
