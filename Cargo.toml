@@ -70,6 +70,13 @@ lto = true
 strip = true
 codegen-units = 1 # 16 for debugging/fast build time; 1 for release builds (lowers binary size)
 
+# PGO (Profile-Guided Optimization) profile for maximum performance
+[profile.pgo]
+inherits = "release"
+opt-level = 3
+lto = "fat"  # Use fat LTO for better optimization
+codegen-units = 1
+
 [profile.dev.package."*"]
 opt-level = 2
 
