@@ -6,15 +6,6 @@ use std::path::Path;
 /// Each variant represents a different format that an image file can be encoded in.
 /// The `Other` variant is provided to allow for formats not explicitly listed here,
 /// enabling the enumeration to hold any format specified as a `String`.
-///
-/// # Examples
-///
-/// ```
-/// use your_crate::ImageFormat;
-///
-/// let format = ImageFormat::Png;
-/// let unknown_format = ImageFormat::Other("custom-format".to_string());
-/// ```
 #[derive(Debug, PartialEq)]
 pub enum ImageFormat {
     /// AV1 Image File Format, a format designed for high compression efficiency.
