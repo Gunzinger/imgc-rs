@@ -340,7 +340,7 @@ git clone https://github.com/Gunzinger/imgc-rs.git
 cd imgc-rs
 # 2. Build the project:
 cargo build --release
-3. Install locally
+# 3. Install locally
 cargo install --path .
 ```
 
@@ -379,4 +379,4 @@ cargo uninstall imgc
 
 ## License
 
-This project under the [MIT License](LICENCE).
+This project under the [MIT License](LICENSE).
