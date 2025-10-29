@@ -190,11 +190,14 @@ pub fn convert_images(
     pb.set_style(style);
     let encode_successful = Arc::new(AtomicUsize::new(0));
     let encode_skipped = Arc::new(AtomicUsize::new(0));
+    let encode_discarded = Arc::new(AtomicUsize::new(0));
     let encode_errors = Arc::new(AtomicUsize::new(0));
     let size_input_total = Arc::new(AtomicUsize::new(0));
     let size_output_total = Arc::new(AtomicUsize::new(0));
     let size_input_preexisting = Arc::new(AtomicUsize::new(0));
     let size_output_preexisting = Arc::new(AtomicUsize::new(0));
+    let size_input_discarded = Arc::new(AtomicUsize::new(0));
+    let size_output_discarded = Arc::new(AtomicUsize::new(0));
     let format_option_binary_two_nospace = FormatSizeOptions::from(BINARY)
         .decimal_places(2).decimal_zeroes(2).space_after_value(false);
 
@@ -202,7 +205,7 @@ pub fn convert_images(
         .par_bridge()
         .map(|path| {
             let res = if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
-                return (-4, 0, 0);
+                return (-2, 0, 0);
             } else {
                 convert_image(
                     &*path, img_format,
@@ -212,7 +215,7 @@ pub fn convert_images(
                     option_png_compression_type, option_png_filter_type,
                     option_avif_bit_depth, option_avif_color_model, option_avif_alpha_color_mode, option_avif_alpha_quality
                 )
-            }.map_err(|err| handle_conversion_error(path, err)).unwrap_or_else(|_| (-2, 0, 0));
+            }.map_err(|err| handle_conversion_error(path, err)).unwrap_or_else(|_| (-1, 0, 0));
             pb.inc(1); // increment progress bar counter
             match res.0 {
                 0 => {
@@ -220,14 +223,19 @@ pub fn convert_images(
                     size_input_total.fetch_add(res.1, Ordering::SeqCst);
                     size_output_total.fetch_add(res.2, Ordering::SeqCst);
                 }, // improve: track input/output size here and show interactively
-                -1 => {
+                1 => {
                     encode_skipped.fetch_add(1, Ordering::SeqCst);
                     size_input_total.fetch_add(res.1, Ordering::SeqCst);
                     size_output_total.fetch_add(res.2, Ordering::SeqCst);
                     size_input_preexisting.fetch_add(res.1, Ordering::SeqCst);
                     size_output_preexisting.fetch_add(res.2, Ordering::SeqCst);
                 },
-                -2 => {
+                2 => {
+                    encode_discarded.fetch_add(1, Ordering::SeqCst);
+                    size_input_discarded.fetch_add(res.1, Ordering::SeqCst);
+                    size_output_discarded.fetch_add(res.2, Ordering::SeqCst);
+                },
+                -1 => {
                     encode_errors.fetch_add(1, Ordering::SeqCst);
                 },
                 _ => {}
@@ -268,6 +276,13 @@ pub fn convert_images(
     println!("Successful:  {}", encode_successful.load(Ordering::Relaxed));
     println!("Skipped:     {}", encode_skipped.load(Ordering::Relaxed));
     println!("Errors:      {}", encode_errors.load(Ordering::Relaxed));
+    if conf.discard_if_larger_than_input && encode_discarded.load(Ordering::Relaxed) > 0 {
+        println!("Discarded:   {} (due to the encode being larger than the input; {} ➜ {})",
+                 encode_discarded.load(Ordering::Relaxed),
+                 format_size(size_input_discarded.load(Ordering::Relaxed), format_option_binary_two_nospace),
+                 format_size(size_output_discarded.load(Ordering::Relaxed), format_option_binary_two_nospace));
+        println!("Please note that discarded in- and outputs do not count into the total in-/output statistics below.")
+    }
     if size_input_total.load(Ordering::Relaxed) > 0 && size_output_total.load(Ordering::Relaxed) > 0 {
         // show total stats
         println!("Total input size:  {}", format_size(size_input_total.load(Ordering::Relaxed), format_option_binary_two_nospace));
@@ -386,7 +401,14 @@ fn normalize_prefix<P: AsRef<Path>>(p: P) -> PathBuf {
 
 /// Encodes an image to the specified image format and saves it to the specified output directory.
 ///
-/// returns tuple (isize, usize, usize), (status, input_size (B), output_size (B))
+/// Returns tuple (isize, usize, usize), (status, input_size (B), output_size (B))
+///
+/// Status codes:
+/// 2 = encode larger than input, output file not saved;
+/// 1 = skipped;
+/// 0 = success;
+/// -1 = error;
+/// -2 = aborted (interrupt / ctrl+c received)
 fn convert_image(
     input_path: &Path,
     img_format: &ImageFormat,
@@ -406,7 +428,12 @@ fn convert_image(
     option_avif_alpha_quality: &Option<f32>,
 ) -> Result<(isize, usize, usize), Box<dyn StdError + Send + Sync>> {
     // returns tuple (status, input_size (B), output_size (B))
-    // status: 0 = success, -1 = skipped, -2 = error
+    // status:
+    // 2 = would have been larger than input or existing file, output file not saved (show as skipped, but seperate statistics
+    // 1 = skipped,
+    // 0 = success,
+    // -1 = error,
+    // -2 = aborted (interrupt / ctrl+c received)
     let ext = img_format.extension();
     let output_path;
     if output.is_empty() {
@@ -430,7 +457,7 @@ fn convert_image(
     if fs::exists(output_path.clone())? && !overwrite_existing && !overwrite_if_smaller {
         // file exists, and we do not have any overwrite flag on? => return early
         //println!("skipped because output path exists and overwrite options are unset {}", input_path.display());
-        return Ok((-1, input_size, fs::metadata(output_path.clone())?.len() as usize))
+        return Ok((1, input_size, fs::metadata(output_path.clone())?.len() as usize))
     }
 
     let image = try_read_image(input_path)?;
@@ -460,13 +487,13 @@ fn convert_image(
                 overwrite_if_smaller {
                 // overwrite if smaller flag is on, but output exists and is already smaller than our encode
                 //  => abort
-                // TODO: how to propagate this information upwards into statistics?
+                // TODO: how to propagate this information upwards into statistics? i am not happy with the current handling
                 //println!(
                 //    "skipped because output path exists,\
                 //      overwrite_if_smaller is active,\
                 //      but new output is larger than the existing one {}",
                 //    input_path.display());
-                return Ok((-1, input_size, fs::metadata(output_path.clone())?.len() as usize));
+                return Ok((1, input_size, fs::metadata(output_path.clone())?.len() as usize));
             }
 
             if discard_if_larger_than_input && output_size >= input_size {
@@ -475,7 +502,7 @@ fn convert_image(
                 //    "skipped because the output is larger than the input,\
                 //      and discard_if_larger_than_input is active {}",
                 //    input_path.display());
-                return Ok((-1, input_size, fs::metadata(output_path.clone())?.len() as usize));
+                return Ok((2, input_size, output_size));
             }
 
             fs::write(output_path.clone(), image_data)?;
