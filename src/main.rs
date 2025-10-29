@@ -14,6 +14,7 @@ fn main() -> Result<(), Error> {
         CommonConfig { 
             pattern: args.pattern,
             output: args.output.unwrap_or("".parse().unwrap()),
+            reverse_processing_order: args.reverse_processing_order.unwrap(),
             overwrite_if_smaller: args.overwrite_if_smaller.unwrap(),
             overwrite_existing: args.overwrite_existing.unwrap(),
             discard_if_larger_than_input: args.discard_if_larger_than_input.unwrap(),

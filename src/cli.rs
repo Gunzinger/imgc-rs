@@ -24,6 +24,11 @@ pub struct CliArgs {
     /// If set, replaces the fixed base of the pattern directory structure of the input pattern. (before any * in the glob pattern)
     #[clap(short, long, global = true, default_value = None)]
     pub output: Option<String>,
+    
+    /// By default, imgc will process input files in lexicographical order after expanding the pattern.
+    /// Setting this starts the process from the back.
+    #[clap(long, global = true, action = Some(ArgAction::SetTrue))]
+    pub reverse_processing_order: Option<bool>,
 
     /// Overwrite the existing output file if the current conversion resulted in a smaller file.
     #[clap(long, global = true, action = Some(ArgAction::SetTrue))]

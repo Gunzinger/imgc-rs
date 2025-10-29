@@ -49,8 +49,13 @@ pub struct CommonConfig {
     /// Defaults to the same location as the original images with the new file extension.
     pub output: String,
 
+    /// By default, imgc will process input files in lexicographical order after expanding the pattern.
+    /// Setting this starts the process from the back.
+    /// Defaults to false.
+    pub reverse_processing_order: bool,
+
     /// Overwrite the existing output file if the current conversion resulted in a smaller file.
-    /// Defaults to true.
+    /// Defaults to false.
     pub overwrite_if_smaller: bool,
 
     /// Overwrite existing outputs?
@@ -106,10 +111,16 @@ pub fn convert_images(
     // sort paths lexicographically, not only filenames
     paths.sort_by(|a, b| {
         let dir_cmp = a.parent().cmp(&b.parent());
-        if dir_cmp != std::cmp::Ordering::Equal {
+        let cmp = if dir_cmp != std::cmp::Ordering::Equal {
             dir_cmp
         } else {
             a.file_name().cmp(&b.file_name())
+        };
+
+        if conf.reverse_processing_order {
+            cmp.reverse()
+        } else {
+            cmp
         }
     });
     // TODO: check for collision candidates (same filename but different extensions => same encoded output filename format...)
