@@ -293,7 +293,9 @@ pub fn convert_images(
                 // if we have new encodes and preexisting images, first show the stats for the new encodes, then for the preexisting ones
                 println!("New encodes input size:  {}", format_size(size_input_total.load(Ordering::Relaxed) - size_input_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace));
                 println!("New encodes output size: {}", format_size(size_output_total.load(Ordering::Relaxed) - size_output_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace));
-                println!("New encodes comp. ratio: {:.02}%", size_output_preexisting.load(Ordering::Relaxed) as f64 / size_input_preexisting.load(Ordering::Relaxed) as f64 * 100.0);
+                println!("New encodes comp. ratio: {:.02}%",
+                         (size_output_total.load(Ordering::Relaxed) - size_output_preexisting.load(Ordering::Relaxed)) as f64 / (size_input_total.load(Ordering::Relaxed) - size_input_preexisting.load(Ordering::Relaxed)) as f64 * 100.0
+                );
             }
             // if we have preexisting images, show these stats
             println!("Preexisting input size:  {}", format_size(size_input_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace));
