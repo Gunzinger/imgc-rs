@@ -40,10 +40,10 @@ pub fn encode_webp(image: &DynamicImage, lossless: bool, quality: f32) -> Result
     let encoder = if let Some(ref img) = converted_image {
         // Use the converted image (Luma[A]8 paths are unimplemented in the webp lib :D
         Encoder::from_image(img)
-            .map_err(|e| Error::from_string(format!("Failed to create encoder: {:?}", e)))?
+            .map_err(|e| Error::from_string(format!("Failed to create webp encoder for luma input: {:?}", e)))?
     } else {
         Encoder::from_image(image)
-            .map_err(|e| Error::from_string(format!("Failed to create encoder: {:?}", e)))?
+            .map_err(|e| Error::from_string(format!("Failed to create webp encoder: {:?}", e)))?
     };
 
     let webp_data = encoder

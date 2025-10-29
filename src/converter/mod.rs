@@ -31,8 +31,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use image::{ImageReader, ImageFormat as ImageImageFormat, DynamicImage, RgbImage};
 use rayon::prelude::*;
-use bytesize::ByteSize;
-use indicatif::{ProgressBar, ProgressStyle};
+use humansize::{format_size, FormatSizeOptions, BINARY};
+use indicatif::{HumanDuration, ProgressBar, ProgressStyle};
 use jpeg_decoder::Decoder;
 
 // Include dependency version numbers
@@ -68,7 +68,8 @@ pub struct CommonConfig {
 }
 
 fn handle_conversion_error(path: PathBuf, err: Box<dyn StdError + Send + Sync>) -> (i32, i32, i32) {
-    println!("File {}: could not be converted, error: {}", path.display() , err);
+    // carriage return and clear line contents (do not spam screen content with logger bar states)
+    println!("\r\x1b[2KFile {}: could not be converted, error: {}", path.display() , err);
     (-2, 0, 0)
 }
 
@@ -172,7 +173,7 @@ pub fn convert_images(
 
 
     let (tx, rx) = mpsc::channel::<PathBuf>();
-    let total = paths.len() as u64;
+    let input_file_count = paths.len() as u64;
     // producer thread: feed paths in lexicographic order
     std::thread::spawn(move || {
         for path in paths {
@@ -184,18 +185,24 @@ pub fn convert_images(
         drop(tx);
     });
 
-    let pb = ProgressBar::new(total);
+    let pb = ProgressBar::new(input_file_count);
     let style = ProgressStyle::with_template("[{elapsed_precise}/~{duration_precise} ({eta_precise} rem.)] {wide_bar:.cyan/blue} {pos:>7}/{len:7} | {msg}").unwrap();
     pb.set_style(style);
-    let success = Arc::new(AtomicUsize::new(0));
-    let error = Arc::new(AtomicUsize::new(0));
-    let skipped = Arc::new(AtomicUsize::new(0));
+    let encode_successful = Arc::new(AtomicUsize::new(0));
+    let encode_skipped = Arc::new(AtomicUsize::new(0));
+    let encode_errors = Arc::new(AtomicUsize::new(0));
+    let size_input_total = Arc::new(AtomicUsize::new(0));
+    let size_output_total = Arc::new(AtomicUsize::new(0));
+    let size_input_preexisting = Arc::new(AtomicUsize::new(0));
+    let size_output_preexisting = Arc::new(AtomicUsize::new(0));
+    let format_option_binary_two_nospace = FormatSizeOptions::from(BINARY)
+        .decimal_places(2).decimal_zeroes(2).space_after_value(false);
 
     let _results: LinkedList<(isize, usize, usize)> = rx.into_iter()
         .par_bridge()
         .map(|path| {
             let res = if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
-                return (-1, 0, 0);
+                return (-4, 0, 0);
             } else {
                 convert_image(
                     &*path, img_format,
@@ -208,45 +215,80 @@ pub fn convert_images(
             }.map_err(|err| handle_conversion_error(path, err)).unwrap_or_else(|_| (-2, 0, 0));
             pb.inc(1); // increment progress bar counter
             match res.0 {
-                0 => { success.fetch_add(1, Ordering::SeqCst); }, // improve: track input/output size here and show interactively
-                -1 => { skipped.fetch_add(1, Ordering::SeqCst); },
-                -2 => { error.fetch_add(1, Ordering::SeqCst); },
+                0 => {
+                    encode_successful.fetch_add(1, Ordering::SeqCst);
+                    size_input_total.fetch_add(res.1, Ordering::SeqCst);
+                    size_output_total.fetch_add(res.2, Ordering::SeqCst);
+                }, // improve: track input/output size here and show interactively
+                -1 => {
+                    encode_skipped.fetch_add(1, Ordering::SeqCst);
+                    size_input_total.fetch_add(res.1, Ordering::SeqCst);
+                    size_output_total.fetch_add(res.2, Ordering::SeqCst);
+                    size_input_preexisting.fetch_add(res.1, Ordering::SeqCst);
+                    size_output_preexisting.fetch_add(res.2, Ordering::SeqCst);
+                },
+                -2 => {
+                    encode_errors.fetch_add(1, Ordering::SeqCst);
+                },
                 _ => {}
             }
-            pb.set_message(format!(
-                "✔ {} — {} ✖ {}",
-                success.load(Ordering::SeqCst),
-                skipped.load(Ordering::SeqCst),
-                error.load(Ordering::SeqCst)
-            ));
+            pb.set_message(
+                if size_input_preexisting.load(Ordering::Relaxed) > 0 {
+                    format!(
+                        "{} ➜ {} ({} ➜ {} preexisting) | ✔ {} — {} ✖ {}",
+                        format_size(size_input_total.load(Ordering::Relaxed), format_option_binary_two_nospace),
+                        format_size(size_output_total.load(Ordering::Relaxed), format_option_binary_two_nospace),
+                        format_size(size_input_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace),
+                        format_size(size_output_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace),
+                        encode_successful.load(Ordering::Relaxed),
+                        encode_skipped.load(Ordering::Relaxed),
+                        encode_errors.load(Ordering::Relaxed)
+                    )
+                } else {
+                    format!(
+                        "{} ➜ {} | ✔ {} — {} ✖ {}",
+                        format_size(size_input_total.load(Ordering::Relaxed), format_option_binary_two_nospace),
+                        format_size(size_output_total.load(Ordering::Relaxed), format_option_binary_two_nospace),
+                        encode_successful.load(Ordering::Relaxed),
+                        encode_skipped.load(Ordering::Relaxed),
+                        encode_errors.load(Ordering::Relaxed)
+                    )
+                }
+            );
             res
         })
         .collect();
 
-    let encode_successful = _results.par_iter()
-        .filter(|(status, _, _)| *status == 0).count();
-    let encode_skipped = _results.par_iter()
-        .filter(|(status, _, _)| *status == -1).count();
-    let encode_errors = _results.par_iter()
-        .filter(|(status, _, _)| *status == -2).count();
-
-    let total_input_size = _results.par_iter()
-        .filter(|(status, _, _)| *status == 0 || *status == -1)
-        .map(|(_, input_size, _)| input_size).sum::<usize>();
-    let total_output_size = _results.par_iter()
-        .filter(|(status, _, _)| *status == 0 || *status == -1)
-        .map(|(_, _, output_size)| output_size).sum::<usize>();
-
+    // use a return carriage feed to clear the remnants of the progress bar off the screen
+    pb.finish_with_message("finished!");
+    // \r\x1b[2K is the sequence to clear the current row content (if manual way is intended)
     println!("Encode statistics:");
-    println!("Successful: {:?}", encode_successful);
-    println!("Skipped:    {:?}", encode_skipped);
-    println!("Errors:     {:?}", encode_errors);
-    if total_input_size > 0 && total_output_size > 0 {
-        println!("Total input size:  {}", ByteSize::b(total_input_size as u64));
-        println!("Total output size: {}", ByteSize::b(total_output_size as u64));
-        println!("Compression ratio: {:.02}%", total_output_size as f64 / total_input_size as f64 * 100.0);
+    println!("Time taken:  {}", HumanDuration(pb.elapsed()));
+    println!("Input files: {}", input_file_count);
+    println!("Successful:  {}", encode_successful.load(Ordering::Relaxed));
+    println!("Skipped:     {}", encode_skipped.load(Ordering::Relaxed));
+    println!("Errors:      {}", encode_errors.load(Ordering::Relaxed));
+    if size_input_total.load(Ordering::Relaxed) > 0 && size_output_total.load(Ordering::Relaxed) > 0 {
+        // show total stats
+        println!("Total input size:  {}", format_size(size_input_total.load(Ordering::Relaxed), format_option_binary_two_nospace));
+        println!("Total output size: {}", format_size(size_output_total.load(Ordering::Relaxed), format_option_binary_two_nospace));
+        println!("Total comp. ratio: {:.02}%", size_output_total.load(Ordering::Relaxed) as f64 / size_input_total.load(Ordering::Relaxed) as f64 * 100.0);
+        if size_input_preexisting.load(Ordering::Relaxed) > 0 && size_output_preexisting.load(Ordering::Relaxed) > 0 {
+            if size_input_total.load(Ordering::Relaxed) - size_input_preexisting.load(Ordering::Relaxed) > 0 {
+                // if we have new encodes and preexisting images, first show the stats for the new encodes, then for the preexisting ones
+                println!("New encodes input size:  {}", format_size(size_input_total.load(Ordering::Relaxed) - size_input_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace));
+                println!("New encodes output size: {}", format_size(size_output_total.load(Ordering::Relaxed) - size_output_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace));
+                println!("New encodes comp. ratio: {:.02}%", size_output_preexisting.load(Ordering::Relaxed) as f64 / size_input_preexisting.load(Ordering::Relaxed) as f64 * 100.0);
+            }
+            // if we have preexisting images, show these stats
+            println!("Preexisting input size:  {}", format_size(size_input_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace));
+            println!("Preexisting output size: {}", format_size(size_output_preexisting.load(Ordering::Relaxed), format_option_binary_two_nospace));
+            println!("Preexisting comp. ratio: {:.02}%", size_output_preexisting.load(Ordering::Relaxed) as f64 / size_input_preexisting.load(Ordering::Relaxed) as f64 * 100.0);
+        }
     } else {
-        println!("Input and output size could not be determined, please try using OS-native binaries.")
+        if (encode_successful.load(Ordering::Relaxed) + encode_skipped.load(Ordering::Relaxed) + encode_errors.load(Ordering::Relaxed)) > 1 {
+            println!("Input and output size could not be determined, please try using OS-native binaries.");
+        }
     }
     Ok(())
 }
@@ -343,6 +385,8 @@ fn normalize_prefix<P: AsRef<Path>>(p: P) -> PathBuf {
 }
 
 /// Encodes an image to the specified image format and saves it to the specified output directory.
+///
+/// returns tuple (isize, usize, usize), (status, input_size (B), output_size (B))
 fn convert_image(
     input_path: &Path,
     img_format: &ImageFormat,
@@ -382,10 +426,11 @@ fn convert_image(
         fs::create_dir_all(Path::new(&output).join(rel_path.parent().unwrap_or_else(|| Path::new(""))))?;
     };
 
+    let input_size = fs::metadata(&input_path)?.len() as usize;
     if fs::exists(output_path.clone())? && !overwrite_existing && !overwrite_if_smaller {
         // file exists, and we do not have any overwrite flag on? => return early
         //println!("skipped because output path exists and overwrite options are unset {}", input_path.display());
-        return Ok((-1, 0, 0))
+        return Ok((-1, input_size, fs::metadata(output_path.clone())?.len() as usize))
     }
 
     let image = try_read_image(input_path)?;
@@ -421,17 +466,16 @@ fn convert_image(
                 //      overwrite_if_smaller is active,\
                 //      but new output is larger than the existing one {}",
                 //    input_path.display());
-                return Ok((-1, 0, 0));
+                return Ok((-1, input_size, fs::metadata(output_path.clone())?.len() as usize));
             }
 
-            let input_size = fs::metadata(&input_path)?.len() as usize;
             if discard_if_larger_than_input && output_size >= input_size {
                 // TODO: how to propagate this information upwards into statistics?
                 //println!(
                 //    "skipped because the output is larger than the input,\
                 //      and discard_if_larger_than_input is active {}",
                 //    input_path.display());
-                return Ok((-1, 0, 0));
+                return Ok((-1, input_size, fs::metadata(output_path.clone())?.len() as usize));
             }
 
             fs::write(output_path.clone(), image_data)?;

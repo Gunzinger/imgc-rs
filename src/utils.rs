@@ -1,6 +1,6 @@
 use glob::glob;
 use std::{fs, path::Path};
-use bytesize::ByteSize;
+use humansize::{format_size, FormatSizeOptions, BINARY};
 use crate::{format::ImageFormat, Error};
 
 /// Checks if the image format of the given path is supported, ignoring a specific format.
@@ -45,7 +45,9 @@ pub fn remove_files(pattern: &str) -> Result<(), Error> {
             println!("Deleted: {}", path.display());
         }
     }
-    println!("Deleted {}.", ByteSize::b(total_deleted_bytes as u64));
+    let format_option_binary_two_nospace = FormatSizeOptions::from(BINARY)
+        .decimal_places(2).decimal_zeroes(2).space_after_value(false);
+    println!("Deleted {}.", format_size(total_deleted_bytes, format_option_binary_two_nospace));
 
     Ok(())
 }
