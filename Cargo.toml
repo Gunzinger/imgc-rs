@@ -34,7 +34,7 @@ rayon = "1.11.0"
 webp = "0.3.1"
 ravif = "0.12.0"
 rgb = "0.8.52"
-indicatif = {version = "0.18.2", features = ["rayon"]}
+indicatif = {version = "0.18.3", features = ["rayon"]}
 mozjpeg = "0.10.13"
 jpeg-decoder = "0.3.2"
 #bytesize = "2.1.0" # replaced by humansize
