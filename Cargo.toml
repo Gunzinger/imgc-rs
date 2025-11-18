@@ -29,7 +29,7 @@ clap = { version = "4.5.51", features = ["derive"] } # 4.5.41 changes parser ord
 glob = "0.3.3"
 ctrlc = "3.5.1"
 #image = {version = "0.25.8", features = ["avif-native"] } # problematic on windows
-image = {version = "0.25.8"}
+image = {version = "0.25.9"}
 rayon = "1.11.0"
 webp = "0.3.1"
 ravif = "0.12.0"
