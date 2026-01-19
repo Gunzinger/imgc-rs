@@ -654,7 +654,7 @@ dependencies = [
  "indicatif",
  "jpeg-decoder",
  "mozjpeg",
- "ravif 0.12.0",
+ "ravif 0.13.0",
  "rayon",
  "rgb",
  "webp",
@@ -1255,9 +1255,9 @@ dependencies = [
 
 [[package]]
 name = "ravif"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef69c1990ceef18a116855938e74793a5f7496ee907562bd0857b6ac734ab285"
+checksum = "e52310197d971b0f5be7fe6b57530dcd27beb35c1b013f29d66c1ad73fbbcc45"
 dependencies = [
  "avif-serialize",
  "imgref",
