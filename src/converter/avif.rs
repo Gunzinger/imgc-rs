@@ -1,6 +1,6 @@
 use crate::Error;
 use image::DynamicImage;
-use ravif::*;
+use ravif_new::*;
 use rgb::FromSlice;
 use crate::converter::DEPENDENCIES;
 
@@ -19,24 +19,24 @@ copy_enum_variants!(BitDepth, Eight, Ten, Auto);
 copy_enum_variants!(ColorModel, YCbCr, RGB);
 copy_enum_variants!(AlphaColorMode, UnassociatedDirty, UnassociatedClean, Premultiplied);
 
-fn convert_bit_depth_to_ext(bit_depth: Option<BitDepth>) -> ravif::BitDepth {
+fn convert_bit_depth_to_ext(bit_depth: Option<BitDepth>) -> ravif_new::BitDepth {
     match bit_depth.unwrap_or(BitDepth::Auto) {
-        BitDepth::Eight => ravif::BitDepth::Eight,
-        BitDepth::Ten => ravif::BitDepth::Ten,
-        BitDepth::Auto => ravif::BitDepth::Auto
+        BitDepth::Eight => ravif_new::BitDepth::Eight,
+        BitDepth::Ten => ravif_new::BitDepth::Ten,
+        BitDepth::Auto => ravif_new::BitDepth::Auto
     }
 }
-fn convert_color_model_to_ext(color_model: Option<ColorModel>) -> ravif::ColorModel {
+fn convert_color_model_to_ext(color_model: Option<ColorModel>) -> ravif_new::ColorModel {
     match color_model.unwrap_or(ColorModel::YCbCr) {
-        ColorModel::YCbCr => ravif::ColorModel::YCbCr,
-        ColorModel::RGB => ravif::ColorModel::RGB
+        ColorModel::YCbCr => ravif_new::ColorModel::YCbCr,
+        ColorModel::RGB => ravif_new::ColorModel::RGB
     }
 }
-fn convert_alpha_color_mode_to_ext(alpha_color_mode: Option<AlphaColorMode>) -> ravif::AlphaColorMode {
+fn convert_alpha_color_mode_to_ext(alpha_color_mode: Option<AlphaColorMode>) -> ravif_new::AlphaColorMode {
     match alpha_color_mode.unwrap_or(AlphaColorMode::UnassociatedClean) {
-        AlphaColorMode::UnassociatedDirty => ravif::AlphaColorMode::UnassociatedDirty,
-        AlphaColorMode::UnassociatedClean => ravif::AlphaColorMode::UnassociatedClean,
-        AlphaColorMode::Premultiplied => ravif::AlphaColorMode::Premultiplied
+        AlphaColorMode::UnassociatedDirty => ravif_new::AlphaColorMode::UnassociatedDirty,
+        AlphaColorMode::UnassociatedClean => ravif_new::AlphaColorMode::UnassociatedClean,
+        AlphaColorMode::Premultiplied => ravif_new::AlphaColorMode::Premultiplied
     }
 }
 
