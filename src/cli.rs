@@ -41,6 +41,11 @@ pub struct CliArgs {
     /// Discards the encoding result if it is larger than the input file (does not create an output file).
     #[clap(long, global = true, action = Some(ArgAction::SetTrue))]
     pub discard_if_larger_than_input: Option<bool>,
+
+    /// Discards the alpha channel of the input image(s) if it is present.
+    ///  (this does not make loading faster, but it can improve the encoding result)
+    #[clap(long, global = true, action = Some(ArgAction::SetTrue))]
+    pub discard_input_alpha_channel: Option<bool>,
 }
 
 /// Image converter actions

@@ -18,6 +18,7 @@ fn main() -> Result<(), Error> {
             overwrite_if_smaller: args.overwrite_if_smaller.unwrap(),
             overwrite_existing: args.overwrite_existing.unwrap(),
             discard_if_larger_than_input: args.discard_if_larger_than_input.unwrap(),
+            discard_input_alpha_channel: args.discard_input_alpha_channel.unwrap(),
         }
     );
     match args.command {

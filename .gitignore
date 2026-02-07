@@ -6,3 +6,6 @@
 upx/
 
 data/
+
+# debug/repro screenshots
+debug*/

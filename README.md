@@ -27,6 +27,8 @@ Compression ratio: 54.95%
 
 - **Broad Format Support**: 
  Works with many [supported image formats](#supported-formats).
+- **Works with huge images**:
+  Can optimize very large images (~1GiB input image size, ~32Kx~16K px dimensions).
 - **Speedy Processing**:
   Written in Rust to keep overhead to a minimum, we also take advantage of `rayon` for parallel processing.
 - **Input selection using Glob Patterns**:
@@ -52,6 +54,16 @@ Input images are decoded using the `image` crate,
 - `avif`, avif encoder using the `ravif` crate - offers lossy and lossless encoding
 - `png`, png encoder using the `image` crate - offers lossless encoding
 - `jpeg`, jpeg optimizer using the `mozjpeg` crate - only optimizes images
+
+#### Output format notes 📝
+
+When working with very large input images, please keep in mind the output format limits.
+In particular:
+- `webp`: maximum dimension of [16384x16384px](https://www.ietf.org/rfc/rfc9649.pdf#name-riff-header)
+- `avif`: maximum dimension of [65536x65536px](https://aomediacodec.github.io/av1-avif/#profiles-overview), note 
+  [Baseline Profile](https://aomediacodec.github.io/av1-avif/#baseline-profile)
+  and [Advanced Profile](https://aomediacodec.github.io/av1-avif/#advanced-profile)
+  limits if you want to be friendly to consuming hardware decoders. :)
 
 ### Requests
 
@@ -148,6 +160,7 @@ Options:
       --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
       --overwrite-existing            Overwrite existing output files regardless of size
       --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+      --discard-input-alpha-channel   Discards the alpha channel of the input image(s) if it is present. (this does not make loading faster, but it can improve the encoding result)
   -h, --help                          Print help
   -V, --version                       Print version
 ```
@@ -167,6 +180,7 @@ Options:
       --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
       --overwrite-existing            Overwrite existing output files regardless of size
       --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+      --discard-input-alpha-channel   Discards the alpha channel of the input image(s) if it is present. (this does not make loading faster, but it can improve the encoding result)
   -h, --help                          Print help
 ```
 
@@ -180,6 +194,7 @@ Options:
       --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
       --overwrite-existing            Overwrite existing output files regardless of size
       --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+      --discard-input-alpha-channel   Discards the alpha channel of the input image(s) if it is present. (this does not make loading faster, but it can improve the encoding result)
   -h, --help                          Print help
 ```
 
@@ -251,6 +266,9 @@ Options:
       --discard-if-larger-than-input
           Discards the encoding result if it is larger than the input file (does not create an output file)
 
+      --discard-input-alpha-channel
+          Discards the alpha channel of the input image(s) if it is present. (this does not make loading faster, but it can improve the encoding result)
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -265,6 +283,7 @@ Options:
       --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
       --overwrite-existing            Overwrite existing output files regardless of size
       --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+      --discard-input-alpha-channel   Discards the alpha channel of the input image(s) if it is present. (this does not make loading faster, but it can improve the encoding result)
   -h, --help                          Print help
 ```
 
@@ -278,6 +297,7 @@ Options:
       --overwrite-if-smaller          Overwrite the existing output file if the current conversion resulted in a smaller file
       --overwrite-existing            Overwrite existing output files regardless of size
       --discard-if-larger-than-input  Discards the encoding result if it is larger than the input file (does not create an output file)
+      --discard-input-alpha-channel   Discards the alpha channel of the input image(s) if it is present. (this does not make loading faster, but it can improve the encoding result)
   -h, --help                          Print help
 
 ```

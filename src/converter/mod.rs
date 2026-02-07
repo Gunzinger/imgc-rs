@@ -29,7 +29,7 @@ use std::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
-use image::{ImageReader, ImageFormat as ImageImageFormat, DynamicImage, RgbImage};
+use image::{ImageReader, ImageFormat as ImageImageFormat, DynamicImage, RgbImage, Limits};
 use rayon::prelude::*;
 use humansize::{format_size, FormatSizeOptions, BINARY};
 use indicatif::{HumanDuration, ProgressBar, ProgressStyle};
@@ -65,6 +65,10 @@ pub struct CommonConfig {
     /// Discards the encoding result if it is larger than the input file (does not create an output file).
     /// Defaults to false.
     pub discard_if_larger_than_input: bool,
+
+    /// Discards the alpha channel of the image if it is present.
+    /// Defaults to false.
+    pub discard_input_alpha_channel: bool,
 }
 
 fn handle_conversion_error(path: PathBuf, err: Box<dyn StdError + Send + Sync>) -> (i32, i32, i32) {
@@ -138,7 +142,7 @@ pub fn convert_images(
         let output_directory = Path::new(&conf.output);
         if ! fs::exists(output_directory)? {
             // is it possible to warn in docker if the target output directory is not host mounted?
-            println!("Creating output directory \"{:?}\"", output_directory);
+            println!("Creating output directory {:?}", output_directory);
             fs::create_dir_all(output_directory).unwrap_or_else(|err| {
                 eprintln!("Error creating the output directory: {err}");
                 std::process::exit(1);
@@ -211,6 +215,7 @@ pub fn convert_images(
                     &*path, img_format,
                     conf.output.clone(), pattern_base.clone(), conf.overwrite_if_smaller,
                     conf.overwrite_existing, conf.discard_if_larger_than_input,
+                    conf.discard_input_alpha_channel,
                     option_lossless, option_quality, option_speed,
                     option_png_compression_type, option_png_filter_type,
                     option_avif_bit_depth, option_avif_color_model, option_avif_alpha_color_mode, option_avif_alpha_quality
@@ -335,6 +340,8 @@ fn fallback_retry_read_image(input_path: &Path, input_error: Box<dyn StdError + 
     }
 
     let mut reader = ImageReader::open(input_path)?;
+    // disable image-rs decoding limits
+    reader.limits(Limits::no_limits());
     match ext.as_str() {
         "pjpeg" | "jpg" | "jpeg" => reader.set_format(ImageImageFormat::Jpeg),
         "x-png" | "png" => reader.set_format(ImageImageFormat::Png),
@@ -352,7 +359,11 @@ fn try_read_image(input_path: &Path)
     -> Result<DynamicImage, Box<dyn StdError + Send + Sync>> {
     // first try with autodetection, unfortunately zune panics on one of the input images...
     let mut result = panic::catch_unwind(|| {
-        Ok(ImageReader::open(input_path)?.decode()?)
+        let mut reader = ImageReader::open(input_path)?;
+        // disable image-rs decoding limits
+        //alternative: let mut limits = Limits::default(); limits.max_alloc = Some(4 * 1024 * 1024 * 1024);
+        reader.limits(Limits::no_limits());
+        Ok(reader.decode()?)
     });
 
     if let Ok(inner) = result {
@@ -363,7 +374,9 @@ fn try_read_image(input_path: &Path)
 
     // retry with guessed format (we have pngs hiding in jpeg extension files, jpg inside bmp, etc. ...)
     result = panic::catch_unwind(|| {
-        Ok(ImageReader::open(input_path)?.with_guessed_format()?.decode()?)
+        let mut reader = ImageReader::open(input_path)?;
+        reader.limits(Limits::no_limits());
+        Ok(reader.with_guessed_format()?.decode()?)
     });
 
     if let Ok(inner) = result {
@@ -399,6 +412,40 @@ fn normalize_prefix<P: AsRef<Path>>(p: P) -> PathBuf {
     normalized
 }
 
+/// trait to enable discard_input_alpha_channel functionality
+trait IntoWithoutAlpha {
+    fn into_without_alpha(self) -> DynamicImage;
+}
+
+impl IntoWithoutAlpha for DynamicImage {
+    fn into_without_alpha(self) -> DynamicImage {
+        match self {
+            DynamicImage::ImageLumaA8(_) =>
+                DynamicImage::ImageLuma8(self.into_luma8()),
+            DynamicImage::ImageLumaA16(_) =>
+                DynamicImage::ImageLuma16(self.into_luma16()),
+
+            DynamicImage::ImageRgba8(_) =>
+                DynamicImage::ImageRgb8(self.into_rgb8()),
+            DynamicImage::ImageRgba16(_) =>
+                DynamicImage::ImageRgb16(self.into_rgb16()),
+            DynamicImage::ImageRgba32F(_) =>
+                DynamicImage::ImageRgb32F(self.into_rgb32f()),
+
+            // otherwise input already has no alpha channel
+            other => other,
+        }
+    }
+}
+
+/// returns the buffer size of the DynamicImage in B
+pub fn buffer_size_bytes(img: &DynamicImage) -> u64 {
+    let (w, h) = (img.width(), img.height());
+    let bytes_per_pixel = img.color().bytes_per_pixel() as u64;
+
+    w as u64 * h as u64 * bytes_per_pixel
+}
+
 /// Encodes an image to the specified image format and saves it to the specified output directory.
 ///
 /// Returns tuple (isize, usize, usize), (status, input_size (B), output_size (B))
@@ -417,6 +464,7 @@ fn convert_image(
     overwrite_if_smaller: bool,
     overwrite_existing: bool,
     discard_if_larger_than_input: bool,
+    discard_input_alpha_channel: bool,
     option_lossless: &Option<bool>,
     option_quality: &Option<f32>,
     option_speed: &Option<u8>,
@@ -460,11 +508,27 @@ fn convert_image(
         return Ok((1, input_size, fs::metadata(output_path.clone())?.len() as usize))
     }
 
-    let image = try_read_image(input_path)?;
+    let image = if discard_input_alpha_channel {
+        try_read_image(input_path)?.into_without_alpha()
+    } else {
+        try_read_image(input_path)?
+    };
 
     let encode_lossless = option_lossless.unwrap_or(false);
     let encode_quality: f32 = option_quality.unwrap_or(90.);
     let encode_speed: u8 = option_speed.unwrap_or(3);
+
+    const HUGE_IMAGE_DIMENSION_LIMIT: u32 = 8192;
+    if image.height() > HUGE_IMAGE_DIMENSION_LIMIT || image.height() > HUGE_IMAGE_DIMENSION_LIMIT {
+        let format_option_binary_two_nospace = FormatSizeOptions::from(BINARY)
+            .decimal_places(2).decimal_zeroes(2).space_after_value(false);
+        println!("Trying to encode huge image \"{}\" (filesize: {}, dimensions: {}x{}px, decoded buffer: {})...",
+                 input_path.display(),
+                 format_size(input_size, format_option_binary_two_nospace),
+                 image.width(), image.height(),
+                 format_size(buffer_size_bytes(&image), format_option_binary_two_nospace)
+                 );
+    }
 
     let image_data = match img_format {
         // TODO: more PNG lossless optimizers, jpeg xl
