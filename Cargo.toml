@@ -34,7 +34,7 @@ rayon = "1.11.0"
 webp = "0.3.1"
 ravif_new = { package="ravif", version="0.13.0" }
 rgb = "0.8.52"
-indicatif = {version = "0.18.3", features = ["rayon"]}
+indicatif = {version = "0.18.4", features = ["rayon"]}
 mozjpeg = "0.10.13"
 jpeg-decoder = "0.3.2"
 humansize = "2.1.3"
