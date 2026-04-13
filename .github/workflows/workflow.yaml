@@ -21,7 +21,7 @@ jobs:
       # Create GitHub Release
       - name: Create GitHub Release
         id: gh_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: Release ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
@@ -98,7 +98,7 @@ jobs:
           shasum -a 256 current_release/${BIN_WIN} > current_release/${BIN_WIN}.sha256
 
       - name: Upload binaries to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: Release ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
